@@ -10,7 +10,13 @@ function getSupabaseServer() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url || !key) return null;
+  if (!url || !key) {
+    console.error("[DbService] Supabase credentials missing on server side!", {
+      urlExists: !!url,
+      keyExists: !!key,
+    });
+    return null;
+  }
   return createClient(url, key, {
     auth: { persistSession: false },
   });
@@ -51,28 +57,27 @@ export const DbService = {
 
   saveSettings: async (settings: any) => {
     const sb = getSupabaseServer();
-    if (sb) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { data, error } = await sb
-          .from("store_settings")
-          .upsert({ id: "default", ...settings }, { onConflict: "id" })
-          .select()
-          .single();
-
-        if (error) {
-          console.error("[DbService] saveSettings error:", error.message, error.code);
-          // Throw so the API route can return a proper 500 to the client
-          throw new Error(error.message);
-        }
-        return data ?? settings;
-      } catch (e) {
-        console.error("[DbService] saveSettings exception:", e);
-        throw e; // propagate — don't silently swallow
-      }
+    if (!sb) {
+      throw new Error("Veritabanı bağlantısı kurulamadı. Lütfen sunucu ortam değişkenlerini kontrol edin.");
     }
-    // No Supabase configured — nothing to persist on the server
-    return settings;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { data, error } = await sb
+        .from("store_settings")
+        .upsert({ id: "default", ...settings }, { onConflict: "id" })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[DbService] saveSettings error:", error.message, error.code);
+        // Throw so the API route can return a proper 500 to the client
+        throw new Error(error.message);
+      }
+      return data ?? settings;
+    } catch (e) {
+      console.error("[DbService] saveSettings exception:", e);
+      throw e; // propagate — don't silently swallow
+    }
   },
 
   // ─── Categories ─────────────────────────────────────────────────────────────
@@ -100,24 +105,24 @@ export const DbService = {
 
   saveCategories: async (categories: any[]) => {
     const sb = getSupabaseServer();
-    if (sb) {
-      try {
-        const { data, error } = await sb
-          .from("categories")
-          .upsert(categories, { onConflict: "id" })
-          .select();
-
-        if (error) {
-          console.error("[DbService] saveCategories error:", error.message, error.code);
-          throw new Error(error.message);
-        }
-        return data ?? categories;
-      } catch (e) {
-        console.error("[DbService] saveCategories exception:", e);
-        throw e;
-      }
+    if (!sb) {
+      throw new Error("Veritabanı bağlantısı kurulamadı. Lütfen sunucu ortam değişkenlerini kontrol edin.");
     }
-    return categories;
+    try {
+      const { data, error } = await sb
+        .from("categories")
+        .upsert(categories, { onConflict: "id" })
+        .select();
+
+      if (error) {
+        console.error("[DbService] saveCategories error:", error.message, error.code);
+        throw new Error(error.message);
+      }
+      return data ?? categories;
+    } catch (e) {
+      console.error("[DbService] saveCategories exception:", e);
+      throw e;
+    }
   },
 
   // ─── Products ────────────────────────────────────────────────────────────────
@@ -145,39 +150,39 @@ export const DbService = {
 
   saveProducts: async (products: any[]) => {
     const sb = getSupabaseServer();
-    if (sb) {
-      try {
-        // Strip the joined `category` object — it's a relation, not a column
-        const rows = products.map(({ category, ...rest }) => rest);
-        const activeIds = rows.map((p) => p.id);
-
-        // Delete products that are no longer in the list
-        if (activeIds.length > 0) {
-          const { error: delError } = await sb
-            .from("products")
-            .delete()
-            .not("id", "in", `(${activeIds.map((id) => `'${id}'`).join(",")})`);
-
-          if (delError) {
-            console.warn("[DbService] saveProducts delete error:", delError.message);
-          }
-        }
-
-        const { data, error } = await sb
-          .from("products")
-          .upsert(rows, { onConflict: "id" })
-          .select();
-
-        if (error) {
-          console.error("[DbService] saveProducts error:", error.message, error.code);
-          throw new Error(error.message);
-        }
-        return data ?? products;
-      } catch (e) {
-        console.error("[DbService] saveProducts exception:", e);
-        throw e;
-      }
+    if (!sb) {
+      throw new Error("Veritabanı bağlantısı kurulamadı. Lütfen sunucu ortam değişkenlerini kontrol edin.");
     }
-    return products;
+    try {
+      // Strip the joined `category` object — it's a relation, not a column
+      const rows = products.map(({ category, ...rest }) => rest);
+      const activeIds = rows.map((p) => p.id);
+
+      // Delete products that are no longer in the list
+      if (activeIds.length > 0) {
+        const { error: delError } = await sb
+          .from("products")
+          .delete()
+          .not("id", "in", `(${activeIds.map((id) => `'${id}'`).join(",")})`);
+
+        if (delError) {
+          console.warn("[DbService] saveProducts delete error:", delError.message);
+        }
+      }
+
+      const { data, error } = await sb
+        .from("products")
+        .upsert(rows, { onConflict: "id" })
+        .select();
+
+      if (error) {
+        console.error("[DbService] saveProducts error:", error.message, error.code);
+        throw new Error(error.message);
+      }
+      return data ?? products;
+    } catch (e) {
+      console.error("[DbService] saveProducts exception:", e);
+      throw e;
+    }
   },
 };
