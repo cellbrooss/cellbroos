@@ -27,7 +27,7 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("StoreSettings")
+          .from("store_settings")
           .select("*")
           .eq("id", "default")
           .single();
@@ -55,7 +55,7 @@ export const DbService = {
       try {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { data, error } = await sb
-          .from("StoreSettings")
+          .from("store_settings")
           .upsert({ id: "default", ...settings }, { onConflict: "id" })
           .select()
           .single();
@@ -81,7 +81,7 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("Category")
+          .from("categories")
           .select("*")
           .order("display_order", { ascending: true });
 
@@ -103,7 +103,7 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("Category")
+          .from("categories")
           .upsert(categories, { onConflict: "id" })
           .select();
 
@@ -127,8 +127,8 @@ export const DbService = {
       try {
         // Join Category relation using Supabase's embedded resource syntax
         const { data, error } = await sb
-          .from("Product")
-          .select('*, category:Category(name, slug)')
+          .from("products")
+          .select('*, category:categories(name, slug)')
           .order("display_order", { ascending: true });
 
         if (error) {
@@ -154,7 +154,7 @@ export const DbService = {
         // Delete products that are no longer in the list
         if (activeIds.length > 0) {
           const { error: delError } = await sb
-            .from("Product")
+            .from("products")
             .delete()
             .not("id", "in", `(${activeIds.map((id) => `'${id}'`).join(",")})`);
 
@@ -164,7 +164,7 @@ export const DbService = {
         }
 
         const { data, error } = await sb
-          .from("Product")
+          .from("products")
           .upsert(rows, { onConflict: "id" })
           .select();
 
