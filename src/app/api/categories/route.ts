@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+import { DbService } from "@/lib/db-service";
+import { cookies } from "next/headers";
+
+export async function GET() {
+  try {
+    const categories = await DbService.getCategories();
+    return NextResponse.json(categories);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const cookieStore = await cookies();
+    const session = cookieStore.get("cellbroos_admin_session")?.value;
+    if (session !== "true") {
+      return NextResponse.json({ error: "Yetkisiz işlem!" }, { status: 401 });
+    }
+
+    const categories = await request.json();
+    if (!Array.isArray(categories)) {
+      return NextResponse.json({ error: "Invalid data format. Expected an array of categories." }, { status: 400 });
+    }
+    const saved = await DbService.saveCategories(categories);
+    return NextResponse.json(saved);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

@@ -1,0 +1,82 @@
+// CellBroos — Telefon Mağazası Veritabanı Şeması
+// Supabase (PostgreSQL) + Prisma
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Category {
+  id            String    @id @default(uuid())
+  name          String
+  slug          String    @unique
+  description   String?
+  image_url     String?
+  display_order Int       @default(0)
+  products      Product[]
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+}
+
+model Product {
+  id               String  @id @default(uuid())
+  name             String
+  slug             String  @unique
+  description      String
+  brand            String
+  model            String
+  price            Decimal? // Gösterim amaçlı ("Yaklaşık Fiyat")
+  specs            Json     // Teknik detaylar (RAM, depolama, ekran, kamera, pil vb.)
+  images           String[] // Ürün görselleri url listesi (Supabase Storage)
+
+  // Stok & Vitrin
+  stock_status     String  @default("IN_STOCK") // IN_STOCK, OUT_OF_STOCK, ON_ORDER
+  is_featured      Boolean @default(false)
+  is_active        Boolean @default(true)
+  display_order    Int     @default(0)
+
+  // SEO Meta Bilgileri
+  meta_title       String?
+  meta_description String?
+
+  category_id      String
+  category         Category @relation(fields: [category_id], references: [id])
+
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+}
+
+model StoreSettings {
+  id                  String  @id @default("default")
+  name                String  @default("CellBroos")
+  logo_url            String?
+  logo_text           String?
+  favicon_url         String?
+  address             String
+  phone               String
+  whatsapp            String
+  working_hours       Json    // {mon:{open:"09:00",close:"20:00"}, sun:null}
+  map_coordinates     String?
+  google_maps_url     String?
+  social_links        Json?   // {instagram:"...", facebook:"...", tiktok:"..."}
+  why_us              Json?   // [{title: "...", desc: "...", icon: "..."}]
+  brands              Json?   // ["Apple", "Samsung", ...]
+  featured_title      String?
+
+  // Duyuru Bandı
+  announcement_text   String?
+  announcement_active Boolean @default(false)
+
+  updated_at          DateTime @updatedAt
+}
+
+model AdminUser {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  role       String   @default("ADMIN")
+  created_at DateTime @default(now())
+}
