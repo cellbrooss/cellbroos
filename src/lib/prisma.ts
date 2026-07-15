@@ -1,13 +1,5 @@
-import { PrismaClient } from "@/generated/prisma/client";
-
-let prismaInstance: PrismaClient | null = null;
-
-export function getPrismaClient(): PrismaClient | null {
-  if (typeof window !== "undefined") return null;
-  if (!process.env.DATABASE_URL) return null;
-  
-  if (!prismaInstance) {
-    prismaInstance = new PrismaClient({} as any);
-  }
-  return prismaInstance;
+// Prisma is not used in this project. Supabase is the only data source.
+// This file is kept to avoid breaking any stale imports during refactoring.
+export function getPrismaClient() {
+  return null;
 }
