@@ -1,7 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { mockProducts, mockCategories, mockStoreSettings } from "./mock-data";
 
-// Server-side Supabase client (uses service role key so it can bypass RLS)
+// ─── Supabase server-side client ─────────────────────────────────────────────
+// Uses service role key when available (bypasses RLS for admin writes).
 function getSupabaseServer() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
@@ -10,8 +11,14 @@ function getSupabaseServer() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url || !key) return null;
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: { persistSession: false },
+  });
 }
+
+// NOTE: Table names MUST match the Prisma model names exactly (PascalCase)
+// because `prisma db push` creates them that way in PostgreSQL.
+// Category → "Category", Product → "Product", StoreSettings → "StoreSettings"
 
 export const DbService = {
   // ─── Store Settings ─────────────────────────────────────────────────────────
@@ -20,34 +27,25 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("store_settings")
+          .from("StoreSettings")
           .select("*")
           .eq("id", "default")
           .single();
 
-        if (error && error.code !== "PGRST116") {
-          // PGRST116 = row not found, ignore it
-          console.warn("Supabase getSettings error:", error.message);
+        if (error) {
+          // PGRST116 = no rows found, everything else is a real error
+          if (error.code !== "PGRST116") {
+            console.warn("[DbService] getSettings error:", error.message, error.code);
+          }
         }
 
+        // Only return DB data if it actually came back — never auto-seed
         if (data) return data;
-
-        // Row doesn't exist yet → insert defaults
-        const { id: _id, ...defaultSettings } = mockStoreSettings as any;
-        const { data: created, error: insertError } = await sb
-          .from("store_settings")
-          .insert({ id: "default", ...defaultSettings })
-          .select()
-          .single();
-
-        if (insertError) {
-          console.warn("Supabase insert settings error:", insertError.message);
-        }
-        return created ?? mockStoreSettings;
       } catch (e) {
-        console.warn("Supabase getSettings exception:", e);
+        console.warn("[DbService] getSettings exception:", e);
       }
     }
+    // Supabase unavailable or row not found → return in-memory mock (read-only fallback)
     return mockStoreSettings;
   },
 
@@ -55,20 +53,25 @@ export const DbService = {
     const sb = getSupabaseServer();
     if (sb) {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { data, error } = await sb
-          .from("store_settings")
-          .upsert({ id: "default", ...settings })
+          .from("StoreSettings")
+          .upsert({ id: "default", ...settings }, { onConflict: "id" })
           .select()
           .single();
 
         if (error) {
-          console.warn("Supabase saveSettings error:", error.message);
+          console.error("[DbService] saveSettings error:", error.message, error.code);
+          // Throw so the API route can return a proper 500 to the client
+          throw new Error(error.message);
         }
         return data ?? settings;
       } catch (e) {
-        console.warn("Supabase saveSettings exception:", e);
+        console.error("[DbService] saveSettings exception:", e);
+        throw e; // propagate — don't silently swallow
       }
     }
+    // No Supabase configured — nothing to persist on the server
     return settings;
   },
 
@@ -78,25 +81,18 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("categories")
+          .from("Category")
           .select("*")
           .order("display_order", { ascending: true });
 
         if (error) {
-          console.warn("Supabase getCategories error:", error.message);
+          console.warn("[DbService] getCategories error:", error.message, error.code);
         }
 
-        if (data && data.length > 0) return data;
-
-        // Auto-seed if empty
-        await DbService.saveCategories(mockCategories);
-        const { data: seeded } = await sb
-          .from("categories")
-          .select("*")
-          .order("display_order", { ascending: true });
-        return seeded ?? mockCategories;
+        // Return DB data if we got any rows (even 0 rows is valid — don't auto-seed)
+        if (!error) return data ?? [];
       } catch (e) {
-        console.warn("Supabase getCategories exception:", e);
+        console.warn("[DbService] getCategories exception:", e);
       }
     }
     return mockCategories;
@@ -107,16 +103,18 @@ export const DbService = {
     if (sb) {
       try {
         const { data, error } = await sb
-          .from("categories")
+          .from("Category")
           .upsert(categories, { onConflict: "id" })
           .select();
 
         if (error) {
-          console.warn("Supabase saveCategories error:", error.message);
+          console.error("[DbService] saveCategories error:", error.message, error.code);
+          throw new Error(error.message);
         }
         return data ?? categories;
       } catch (e) {
-        console.warn("Supabase saveCategories exception:", e);
+        console.error("[DbService] saveCategories exception:", e);
+        throw e;
       }
     }
     return categories;
@@ -127,27 +125,19 @@ export const DbService = {
     const sb = getSupabaseServer();
     if (sb) {
       try {
+        // Join Category relation using Supabase's embedded resource syntax
         const { data, error } = await sb
-          .from("products")
-          .select("*, category:categories(name, slug)")
+          .from("Product")
+          .select('*, category:Category(name, slug)')
           .order("display_order", { ascending: true });
 
         if (error) {
-          console.warn("Supabase getProducts error:", error.message);
+          console.warn("[DbService] getProducts error:", error.message, error.code);
         }
 
-        if (data && data.length > 0) return data;
-
-        // Auto-seed if empty
-        await DbService.getCategories();
-        await DbService.saveProducts(mockProducts);
-        const { data: seeded } = await sb
-          .from("products")
-          .select("*, category:categories(name, slug)")
-          .order("display_order", { ascending: true });
-        return seeded ?? mockProducts;
+        if (!error) return data ?? [];
       } catch (e) {
-        console.warn("Supabase getProducts exception:", e);
+        console.warn("[DbService] getProducts exception:", e);
       }
     }
     return mockProducts;
@@ -157,24 +147,35 @@ export const DbService = {
     const sb = getSupabaseServer();
     if (sb) {
       try {
-        // Remove joined 'category' object before upserting (it's a relation, not a column)
+        // Strip the joined `category` object — it's a relation, not a column
         const rows = products.map(({ category, ...rest }) => rest);
-
-        // Delete removed products
         const activeIds = rows.map((p) => p.id);
-        await sb.from("products").delete().not("id", "in", `(${activeIds.map((id) => `'${id}'`).join(",")})`);
+
+        // Delete products that are no longer in the list
+        if (activeIds.length > 0) {
+          const { error: delError } = await sb
+            .from("Product")
+            .delete()
+            .not("id", "in", `(${activeIds.map((id) => `'${id}'`).join(",")})`);
+
+          if (delError) {
+            console.warn("[DbService] saveProducts delete error:", delError.message);
+          }
+        }
 
         const { data, error } = await sb
-          .from("products")
+          .from("Product")
           .upsert(rows, { onConflict: "id" })
           .select();
 
         if (error) {
-          console.warn("Supabase saveProducts error:", error.message);
+          console.error("[DbService] saveProducts error:", error.message, error.code);
+          throw new Error(error.message);
         }
         return data ?? products;
       } catch (e) {
-        console.warn("Supabase saveProducts exception:", e);
+        console.error("[DbService] saveProducts exception:", e);
+        throw e;
       }
     }
     return products;
