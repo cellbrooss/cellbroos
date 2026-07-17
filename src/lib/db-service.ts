@@ -22,15 +22,59 @@ function getSupabaseServer() {
   });
 }
 
-// NOTE: Table names MUST match the Prisma model names exactly (PascalCase)
-// because `prisma db push` creates them that way in PostgreSQL.
-// Category → "Category", Product → "Product", StoreSettings → "StoreSettings"
+// ─── Auto-Seed Database on Empty ─────────────────────────────────────────────
+let isSeeding = false;
+async function checkAndSeed(sb: any) {
+  if (isSeeding) return;
+  isSeeding = true;
+  try {
+    // 1. Seed Settings
+    const { data: settings, error: sErr } = await sb
+      .from("store_settings")
+      .select("id")
+      .eq("id", "default")
+      .maybeSingle();
+
+    if (!sErr && !settings) {
+      console.log("[DbService] Seeding default store settings...");
+      await sb.from("store_settings").insert(mockStoreSettings);
+    }
+
+    // 2. Seed Categories
+    const { data: categories, error: cErr } = await sb
+      .from("categories")
+      .select("id")
+      .limit(1);
+
+    if (!cErr && (!categories || categories.length === 0)) {
+      console.log("[DbService] Seeding default categories...");
+      await sb.from("categories").insert(mockCategories);
+    }
+
+    // 3. Seed Products
+    const { data: products, error: pErr } = await sb
+      .from("products")
+      .select("id")
+      .limit(1);
+
+    if (!pErr && (!products || products.length === 0)) {
+      console.log("[DbService] Seeding default products...");
+      const rows = mockProducts.map(({ category, ...rest }) => rest);
+      await sb.from("products").insert(rows);
+    }
+  } catch (err) {
+    console.error("[DbService] checkAndSeed failed:", err);
+  } finally {
+    isSeeding = false;
+  }
+}
 
 export const DbService = {
   // ─── Store Settings ─────────────────────────────────────────────────────────
   getSettings: async () => {
     const sb = getSupabaseServer();
     if (sb) {
+      await checkAndSeed(sb);
       try {
         const { data, error } = await sb
           .from("store_settings")
@@ -84,6 +128,7 @@ export const DbService = {
   getCategories: async () => {
     const sb = getSupabaseServer();
     if (sb) {
+      await checkAndSeed(sb);
       try {
         const { data, error } = await sb
           .from("categories")
@@ -129,6 +174,7 @@ export const DbService = {
   getProducts: async () => {
     const sb = getSupabaseServer();
     if (sb) {
+      await checkAndSeed(sb);
       try {
         // Join Category relation using Supabase's embedded resource syntax
         const { data, error } = await sb
